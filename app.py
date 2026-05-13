@@ -24,7 +24,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Plotly: tema dark consistente
 PLOTLY_TEMPLATE = "plotly_dark"
 ACCENT = "#00C9A7"
 
@@ -68,6 +67,72 @@ def add_calc_cols(df: pd.DataFrame) -> pd.DataFrame:
     out["Armazenagem"] = out["Data_Entrada"].apply(calc_armazenagem)
     out["Status DPE"] = out["DPE"].apply(calc_status_dpe)
     return out
+
+
+def to_display(df: pd.DataFrame) -> pd.DataFrame:
+    """Renomeia colunas para exibição: troca '_' por ' '."""
+    return df.rename(columns={c: c.replace("_", " ") for c in df.columns})
+
+
+# ---------------------------------------------------------------------------
+# Helpers de gráficos
+# ---------------------------------------------------------------------------
+def bar_status(df: pd.DataFrame, col: str, title: str):
+    """Barras de contagem de status com legenda lateral e rótulos dentro."""
+    counts = df[col].value_counts().reset_index()
+    counts.columns = ["Status", "Contagem"]
+    fig = px.bar(
+        counts,
+        x="Status",
+        y="Contagem",
+        template=PLOTLY_TEMPLATE,
+        color="Status",
+        title=title,
+        text="Contagem",
+    )
+    fig.update_traces(
+        textposition="inside",
+        textfont=dict(color="white", size=16, family="Arial Black"),
+        cliponaxis=False,
+    )
+    fig.update_layout(
+        showlegend=True,
+        legend_title_text="",
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.05,
+            xanchor="center",
+            x=0.5,
+        ),
+        xaxis=dict(showticklabels=False, title=None),
+        margin=dict(t=40, b=60, l=10, r=10),
+    )
+    return fig
+
+
+def bar_toneladas(df: pd.DataFrame, title: str):
+    """Barras de toneladas por NF com rótulos dentro das barras."""
+    df_sorted = df.sort_values("Toneladas", ascending=False)
+    fig = px.bar(
+        df_sorted,
+        x="NF",
+        y="Toneladas",
+        template=PLOTLY_TEMPLATE,
+        color="Toneladas",
+        color_continuous_scale="Teal",
+        text="Toneladas",
+        title=title,
+    )
+    fig.update_traces(
+        texttemplate="%{text:.2f}",
+        textposition="inside",
+        textfont=dict(color="white", size=12, family="Arial Black"),
+        cliponaxis=False,
+    )
+    fig.update_layout(margin=dict(t=40, b=20, l=10, r=10))
+    fig.update_xaxes(type="category")
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -169,18 +234,6 @@ def filter_by_nf(df: pd.DataFrame, query: str) -> pd.DataFrame:
     return df[df["NF"].astype(str).str.contains(query.strip(), case=False, na=False)]
 
 
-def bar_status(df: pd.DataFrame, col: str, title: str):
-    counts = df[col].value_counts().reset_index()
-    counts.columns = ["Status", "Contagem"]
-    fig = px.bar(
-        counts, x="Status", y="Contagem",
-        template=PLOTLY_TEMPLATE, color="Status",
-        title=title,
-    )
-    fig.update_layout(showlegend=False, margin=dict(t=40, b=20, l=10, r=10))
-    return fig
-
-
 # ===========================================================================
 # 🏠 HOME
 # ===========================================================================
@@ -203,7 +256,7 @@ if menu == "🏠 Home":
         st.info("Nenhum registro no estoque ativo.")
     else:
         st.dataframe(
-            df[DISPLAY_COLS_ESTOQUE],
+            to_display(df[DISPLAY_COLS_ESTOQUE]),
             use_container_width=True,
             hide_index=True,
         )
@@ -221,7 +274,7 @@ if menu == "🏠 Home":
                 col_a, col_b = st.columns([2, 1])
                 with col_a:
                     saida = st.date_input(
-                        "Data_Saída",
+                        "Data Saída",
                         value=date.today(),
                         format="DD/MM/YYYY",
                         key=f"saida_{row['NF']}",
@@ -248,7 +301,7 @@ if menu == "🏠 Home":
 elif menu == "📋 Nova Entrada":
     st.title("📋 Nova Entrada")
 
-    with st.form("nova_entrada", clear_on_submit=False):
+    with st.form("nova_entrada", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
             nf = st.text_input("NF *", max_chars=50)
@@ -256,11 +309,11 @@ elif menu == "📋 Nova Entrada":
             toneladas = st.number_input(
                 "Toneladas *", min_value=0.0, step=0.1, format="%.2f"
             )
-            qtd_volume = st.number_input("Qtd_Volume *", min_value=0, step=1)
+            qtd_volume = st.number_input("Qtd Volume *", min_value=0, step=1)
         with c2:
-            qtd_palet = st.number_input("Qtd_Palet *", min_value=0, step=1)
+            qtd_palet = st.number_input("Qtd Palet *", min_value=0, step=1)
             data_entrada = st.date_input(
-                "Data_Entrada *",
+                "Data Entrada *",
                 value=date.today(),
                 format="DD/MM/YYYY",
             )
@@ -310,24 +363,28 @@ elif menu == "📊 Métricas":
 
     df = add_calc_cols(st.session_state.df_estoque)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total de NFs Ativos", len(df))
-    c2.metric("Total de Toneladas", f"{df['Toneladas'].sum():.2f}" if not df.empty else "0.00")
-    c3.metric("Total de Paletes", int(df["Qtd_Palet"].sum()) if not df.empty else 0)
+    c2.metric(
+        "Total de Toneladas",
+        f"{df['Toneladas'].sum():.2f}" if not df.empty else "0.00",
+    )
+    c3.metric(
+        "Total de Volumes",
+        int(df["Qtd_Volume"].sum()) if not df.empty else 0,
+    )
+    c4.metric(
+        "Total de Paletes",
+        int(df["Qtd_Palet"].sum()) if not df.empty else 0,
+    )
 
     if df.empty:
         st.info("Sem dados para exibir.")
     else:
-        st.subheader("Toneladas por NF")
-        fig1 = px.bar(
-            df.sort_values("Toneladas", ascending=False),
-            x="NF", y="Toneladas",
-            template=PLOTLY_TEMPLATE,
-            color="Toneladas",
-            color_continuous_scale="Teal",
+        st.plotly_chart(
+            bar_toneladas(df, "Toneladas por NF"),
+            use_container_width=True,
         )
-        fig1.update_layout(margin=dict(t=30, b=20, l=10, r=10))
-        st.plotly_chart(fig1, use_container_width=True)
 
         c1, c2 = st.columns(2)
         with c1:
@@ -343,8 +400,8 @@ elif menu == "📊 Métricas":
 
         st.subheader("Resumo")
         st.dataframe(
-            df[["NF", "Praça", "Toneladas", "Qtd_Palet",
-                "Data_Entrada", "DPE", "Armazenagem", "Status DPE"]],
+            to_display(df[["NF", "Praça", "Toneladas", "Qtd_Volume", "Qtd_Palet",
+                "Data_Entrada", "DPE", "Armazenagem", "Status DPE"]]),
             use_container_width=True,
             hide_index=True,
         )
@@ -369,13 +426,17 @@ elif menu == "📁 Histórico":
 
     df = filter_by_nf(df, busca)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total de NFs Finalizadas", len(df))
     c2.metric(
         "Total de Toneladas (Histórico)",
         f"{df['Toneladas'].sum():.2f}" if not df.empty else "0.00",
     )
     c3.metric(
+        "Total de Volumes (Histórico)",
+        int(df["Qtd_Volume"].sum()) if not df.empty else 0,
+    )
+    c4.metric(
         "Total de Paletes (Histórico)",
         int(df["Qtd_Palet"].sum()) if not df.empty else 0,
     )
@@ -384,21 +445,15 @@ elif menu == "📁 Histórico":
         st.info("Nenhum registro no histórico.")
     else:
         st.dataframe(
-            df[DISPLAY_COLS_HISTORICO],
+            to_display(df[DISPLAY_COLS_HISTORICO]),
             use_container_width=True,
             hide_index=True,
         )
 
-        st.subheader("Toneladas por NF (Histórico)")
-        fig1 = px.bar(
-            df.sort_values("Toneladas", ascending=False),
-            x="NF", y="Toneladas",
-            template=PLOTLY_TEMPLATE,
-            color="Toneladas",
-            color_continuous_scale="Teal",
+        st.plotly_chart(
+            bar_toneladas(df, "Toneladas por NF (Histórico)"),
+            use_container_width=True,
         )
-        fig1.update_layout(margin=dict(t=30, b=20, l=10, r=10))
-        st.plotly_chart(fig1, use_container_width=True)
 
         c1, c2 = st.columns(2)
         with c1:
