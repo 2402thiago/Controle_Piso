@@ -60,21 +60,41 @@ _client_cache: gspread.Client | None = None
 
 
 def get_client() -> gspread.Client:
-    """Devolve um cliente gspread autenticado (cacheado em memória)."""
+    """Devolve um cliente gspread autenticado (cacheado em memória).
+
+    Prioriza st.secrets (deploy) e cai para credentials.json (local).
+    """
     global _client_cache
     if _client_cache is not None:
         return _client_cache
 
-    if not os.path.exists(CREDENTIALS_PATH):
-        raise CredentialsError(f"Arquivo {CREDENTIALS_PATH} não encontrado.")
-
+    creds = None
     try:
-        creds = Credentials.from_service_account_file(CREDENTIALS_PATH, scopes=SCOPES)
+        # Deploy: tenta ler dos secrets do Streamlit
+        try:
+            import streamlit as st
+            if "gcp_service_account" in st.secrets:
+                creds = Credentials.from_service_account_info(
+                    dict(st.secrets["gcp_service_account"]),
+                    scopes=SCOPES,
+                )
+        except Exception:
+            pass
+
+        # Local: cai para o arquivo
+        if creds is None:
+            if not os.path.exists(CREDENTIALS_PATH):
+                raise CredentialsError(
+                    f"Credenciais não encontradas (nem em st.secrets, nem em {CREDENTIALS_PATH})."
+                )
+            creds = Credentials.from_service_account_file(CREDENTIALS_PATH, scopes=SCOPES)
+
         _client_cache = gspread.authorize(creds)
         return _client_cache
+    except CredentialsError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise SheetsConnectionError(f"Falha ao autenticar no Google Sheets: {exc}") from exc
-
 
 def get_spreadsheet() -> gspread.Spreadsheet:
     """Abre a planilha controle_piso. Cria se não existir."""
