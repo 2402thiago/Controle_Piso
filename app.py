@@ -319,7 +319,7 @@ elif menu == "📋 Nova Entrada":
             )
             dpe = st.date_input(
                 "DPE — Data Prevista de Entrega *",
-                value=date.today() + timedelta(days=7),
+                value=date.today() + timedelta(days=5),
                 format="DD/MM/YYYY",
             )
 
